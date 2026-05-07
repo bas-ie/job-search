@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# PID files
+.serve.pid
+
+# Output
+results/
+*.db
+*.db.bak.*
+
+# Personal CV (default location for the scoring CV; override via JOB_SEARCH_CV_PATH)
+/cv.md
+/cv.txt
+/cv.tex
+
+# User-specific config (template lives at config.toml.example)
+/config.toml
+
+# User-specific env vars (template lives at .env.example)
+/.env

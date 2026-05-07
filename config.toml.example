@@ -1,0 +1,69 @@
+# Copy this file to config.toml and edit. config.toml is gitignored.
+
+[search]
+# Search queries run against every site/region combination.
+queries = [
+  "software engineer",
+  "backend engineer",
+  "platform engineer",
+]
+
+# JobSpy sources to scrape. Supported: indeed, linkedin, glassdoor, google, zip_recruiter.
+sites = ["indeed", "google", "linkedin"]
+
+# Per-region scrape config. country_indeed is used for the Indeed scraper.
+regions = [
+  { country_indeed = "USA", location = "Remote", label = "US" },
+]
+
+# How many results to request per (site, query, region) combination.
+results_per_query = 20
+
+# Fetch full descriptions for LinkedIn postings (slower, but needed for scoring).
+linkedin_fetch_description = true
+
+[filters]
+# Case-insensitive substrings. Postings whose title contains any of these are
+# filtered out at scrape time and retroactively discarded.
+exclude_title_keywords = [
+  "sales",
+  "manager",
+  "director",
+  "frontend",
+  "front-end",
+]
+
+# Companies to drop entirely (case-insensitive substring match).
+exclude_companies = []
+
+[scoring]
+# Anthropic model. Recommended: claude-haiku-4-5 (cheap),
+# claude-sonnet-4-6 (balanced), claude-opus-4-7 (best).
+model = "claude-haiku-4-5"
+
+# Per-example description truncation in characters (controls prompt size).
+description_truncate = 800
+
+# Hard ceiling on response tokens; the actual response is small.
+max_tokens = 512
+
+# Number of most-recent discarded rows to include as negative examples.
+discard_example_limit = 50
+
+# Minimum description length (chars) for a row to be eligible for scoring.
+min_description_length = 200
+
+[ui]
+# How many days back is considered "Recent" (vs "Older") in the web UI.
+recent_cutoff_days = 14
+
+# Single tech-stack badge displayed on each row in the web UI.
+# A row is flagged when EVERY `must_match` pattern matches the description (or
+# title) AND NO `must_not_match` pattern matches. Patterns are case-insensitive
+# regex. Default: flag Azure-primary roles (mentions Azure but not AWS/GCP).
+# Run `python main.py recompute-flags` after editing to re-evaluate existing rows.
+[flag]
+label = "Azure"
+tooltip = "Mentions Azure without AWS/GCP — likely Azure-primary"
+must_match = ["\\bazure\\b"]
+must_not_match = ["\\baws\\b", "\\bgcp\\b", "\\bgoogle cloud\\b"]
