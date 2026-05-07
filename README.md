@@ -5,6 +5,8 @@ Scrape, triage, and LLM-rank remote job postings. Pulls listings from
 Hacker News "Who is hiring?" threads, stores them in a local SQLite database, scores them against
 your CV with Claude, and serves a Flask web UI for browsing and triaging.
 
+![UI sample showing score fit badges](sample.png) 
+
 ## Author note
 
 There isn't much hand-rolled Python in this project, use at your own risk. Python purists beware!
