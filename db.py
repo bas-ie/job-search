@@ -160,6 +160,7 @@ def upsert_jobs(df: pd.DataFrame) -> tuple[int, int]:
         title = row.get("title")
         if pd.isna(title):
             title = None
+        title = clean_title(title)
         company = row.get("company")
         if pd.isna(company):
             company = None
@@ -351,6 +352,22 @@ def refresh_stack_flag() -> int:
 
 _COMPANY_NAME_LSTRIP = re.compile(r"^[^\w]+", re.UNICODE)
 _COMPANY_NAME_CUT = re.compile(r"[^\w\s&'\-]", re.UNICODE)
+
+_TITLE_TRAILING_JUNK = re.compile(r"[\s\-–—|/\\(\[{,;:]+$")
+
+
+def clean_title(title: str | None) -> str | None:
+    """Strip trailing whitespace and dangling punctuation from a role title.
+
+    Indeed sometimes returns titles like 'Distinguished Engineer -' where the
+    upstream title was truncated. HN headers truncated at 200 chars often end
+    in '|', '/', ',' or similar. Closing brackets and sentence punctuation
+    (')', ']', '?', '!', '.', '+') are kept since they are usually meaningful.
+    """
+    if not title:
+        return title
+    cleaned = _TITLE_TRAILING_JUNK.sub("", title).strip()
+    return cleaned or None
 
 
 def clean_company_name(name: str | None) -> str | None:
