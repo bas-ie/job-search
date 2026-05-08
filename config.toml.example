@@ -1,5 +1,22 @@
 # Copy this file to config.toml and edit. config.toml is gitignored.
 
+[candidate]
+# Your city/country. Included in the scoring prompt so postings restricted to
+# other locations (e.g. "Remote within Germany") get rejected.
+location = "Auckland, New Zealand"
+
+# Countries you have unrestricted work authorization in. A role requiring
+# presence or work-auth in a country outside this list is treated as a hard
+# mismatch (score capped low) regardless of other fit.
+eligible_countries = ["New Zealand"]
+
+# Free-form notes added to the prompt verbatim — relocation willingness,
+# timezone constraints, anything else that filters role fit.
+notes = """
+- Open to fully-remote roles globally.
+- Not willing to relocate.
+"""
+
 [search]
 # Search queries run against every site/region combination.
 queries = [

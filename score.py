@@ -6,6 +6,9 @@ from pathlib import Path
 import anthropic
 
 from config import (
+    CANDIDATE_ELIGIBLE_COUNTRIES,
+    CANDIDATE_LOCATION,
+    CANDIDATE_NOTES,
     SCORING_DESC_TRUNCATE,
     SCORING_DISCARD_EXAMPLE_LIMIT,
     SCORING_MAX_TOKENS,
@@ -37,11 +40,24 @@ Focus on actual role fit (responsibilities, seniority, tech stack, location,
 work-auth requirements, remote eligibility). Do not over-weight surface
 vocabulary or buzzwords.
 
-Score guidance:
+LOCATION HARD CAP — apply BEFORE other scoring:
+The CANDIDATE CONTEXT block names the candidate's location and the countries
+they have work authorization in. If the posting:
+  - requires physical presence in a country outside that list, OR
+  - is "remote within <country>" / "remote, <country> only" / "remote, <region>
+    only" where the country/region excludes the candidate, OR
+  - requires work authorization the candidate cannot satisfy (visa,
+    citizenship, security clearance tied to a specific country), OR
+  - mandates a timezone overlap the candidate's notes rule out,
+then score 0-15 regardless of stack/seniority match. Cite the restriction in
+the rationale. When the posting is genuinely silent on geography, do NOT
+apply the cap — treat it as ordinary fit. Ambiguity is not a restriction.
+
+Score guidance (after the location cap):
 - 80-100: strong fit, candidate would likely apply
 - 50-79:  plausible fit, worth a closer look
 - 20-49:  weak fit, probably not interested
-- 0-19:   clear mismatch
+- 0-19:   clear mismatch (includes location-restricted roles)
 
 Output via the score_fit tool only."""
 
@@ -76,10 +92,22 @@ def _format_example(j: dict) -> str:
     )
 
 
+def _build_candidate_context() -> str:
+    eligible = ", ".join(CANDIDATE_ELIGIBLE_COUNTRIES) or "(none specified)"
+    notes = CANDIDATE_NOTES or "(none)"
+    return (
+        f"Location: {CANDIDATE_LOCATION}\n"
+        f"Work authorization (eligible countries): {eligible}\n"
+        f"Notes:\n{notes}"
+    )
+
+
 def _build_cached_block(cv: str, saves: list[dict], discards: list[dict]) -> str:
     saved_block = "\n".join(_format_example(j) for j in saves) or "(none)"
     discard_block = "\n".join(_format_example(j) for j in discards) or "(none)"
     return (
+        "=== CANDIDATE CONTEXT ===\n"
+        f"{_build_candidate_context()}\n\n"
         "=== CANDIDATE CV (LaTeX source) ===\n"
         f"{cv}\n\n"
         f"=== SAVED ROLES (positive — weight heavily, count={len(saves)}) ===\n"

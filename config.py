@@ -33,6 +33,10 @@ def _load() -> dict:
 
 _cfg = _load()
 
+CANDIDATE_LOCATION: str = _cfg["candidate"]["location"]
+CANDIDATE_ELIGIBLE_COUNTRIES: list[str] = _cfg["candidate"]["eligible_countries"]
+CANDIDATE_NOTES: str = _cfg["candidate"].get("notes", "").strip()
+
 SEARCH_QUERIES: list[str] = _cfg["search"]["queries"]
 SITES: list[str] = _cfg["search"]["sites"]
 REGIONS: list[tuple[str, str, str]] = [
