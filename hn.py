@@ -84,20 +84,23 @@ def parse_header(first_line: str) -> dict:
     return result
 
 
+_REMOTE_PATTERNS = re.compile(
+    r"\bremote(?:ly)?\b|"
+    r"\bwfh\b|"
+    r"work from (?:anywhere|home)|"
+    r"(?:fully|globally|geographically)[- ]distributed|"
+    r"distributed (?:team|workforce|company|organi[sz]ation)",
+    re.IGNORECASE,
+)
+
+
 def is_remote(text: str) -> bool:
-    """Check if a posting mentions remote work."""
-    lower = text.lower()
-    return any(
-        kw in lower
-        for kw in [
-            "remote",
-            "distributed",
-            "work from anywhere",
-            "work from home",
-            "wfh",
-            "anywhere",
-        ]
-    )
+    """Check if a posting mentions remote work.
+
+    "distributed" alone is too noisy — it matches "distributed systems" — so
+    require it to be qualified (e.g. "fully distributed", "distributed team").
+    """
+    return bool(_REMOTE_PATTERNS.search(text))
 
 
 def _fetch_item(item_id: int) -> dict | None:
@@ -180,7 +183,7 @@ def scrape_hn(remote_only: bool = True) -> pd.DataFrame:
                 {
                     "title": title,
                     "company": company,
-                    "location": location or "Remote",
+                    "location": location,
                     "job_url": job_url,
                     "date_posted": date_posted,
                     "search_term": "hackernews",
