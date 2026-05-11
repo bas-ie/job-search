@@ -70,6 +70,17 @@ discard_example_limit = 50
 # Minimum description length (chars) for a row to be eligible for scoring.
 min_description_length = 200
 
+# Auto-discard any 'new' row whose fit_score is below this threshold, applied
+# at the end of every `score` run. Set to 0 to disable. Saved rows are never
+# discarded, and rows with no fit_score are left alone.
+auto_discard_below = 0
+
+# Free-form scoring rubric extension. Injected into the cached prompt block
+# (so it's effectively free after the first call). Use for tech-stack or
+# role-shape preferences that should steer the LLM independently of the UI
+# `[flag]` regex. Leave empty to omit the section entirely.
+guidance = ""
+
 [ui]
 # How many days back is considered "Recent" (vs "Older") in the web UI.
 recent_cutoff_days = 14

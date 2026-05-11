@@ -53,6 +53,8 @@ SCORING_DESC_TRUNCATE: int = _cfg["scoring"]["description_truncate"]
 SCORING_MAX_TOKENS: int = _cfg["scoring"]["max_tokens"]
 SCORING_DISCARD_EXAMPLE_LIMIT: int = _cfg["scoring"]["discard_example_limit"]
 SCORING_MIN_DESCRIPTION_LENGTH: int = _cfg["scoring"]["min_description_length"]
+SCORING_AUTO_DISCARD_BELOW: int = _cfg["scoring"].get("auto_discard_below", 0)
+SCORING_GUIDANCE: str = _cfg["scoring"].get("guidance", "").strip()
 
 RECENT_CUTOFF_DAYS: int = _cfg["ui"]["recent_cutoff_days"]
 

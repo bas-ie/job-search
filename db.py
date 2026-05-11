@@ -599,6 +599,26 @@ def get_scoring_examples(
     return [dict(r) for r in saves], [dict(r) for r in discards]
 
 
+def auto_discard_low_scores(threshold: int) -> int:
+    """Discard 'new' rows with fit_score below `threshold`. Saves are protected.
+
+    Rows with fit_score IS NULL are left alone (NULL comparisons return NULL,
+    so they don't satisfy the predicate).
+    """
+    if threshold <= 0:
+        return 0
+    conn = get_db()
+    cursor = conn.execute(
+        "UPDATE jobs SET status = 'discarded'"
+        " WHERE status = 'new' AND fit_score < ?",
+        (threshold,),
+    )
+    conn.commit()
+    affected = cursor.rowcount
+    conn.close()
+    return affected
+
+
 def set_score(job_id: int, score: int, rationale: str) -> None:
     conn = get_db()
     now = datetime.now().isoformat()

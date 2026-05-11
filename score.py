@@ -9,13 +9,15 @@ from config import (
     CANDIDATE_ELIGIBLE_COUNTRIES,
     CANDIDATE_LOCATION,
     CANDIDATE_NOTES,
+    SCORING_AUTO_DISCARD_BELOW,
     SCORING_DESC_TRUNCATE,
     SCORING_DISCARD_EXAMPLE_LIMIT,
+    SCORING_GUIDANCE,
     SCORING_MAX_TOKENS,
     SCORING_MIN_DESCRIPTION_LENGTH,
     SCORING_MODEL,
 )
-from db import get_scoring_examples, get_unscored_jobs, set_score
+from db import auto_discard_low_scores, get_scoring_examples, get_unscored_jobs, set_score
 
 DEFAULT_CV_PATH = Path(__file__).parent / "cv.md"
 
@@ -105,9 +107,15 @@ def _build_candidate_context() -> str:
 def _build_cached_block(cv: str, saves: list[dict], discards: list[dict]) -> str:
     saved_block = "\n".join(_format_example(j) for j in saves) or "(none)"
     discard_block = "\n".join(_format_example(j) for j in discards) or "(none)"
+    guidance_section = (
+        f"=== SCORING GUIDANCE (additional rubric) ===\n{SCORING_GUIDANCE}\n\n"
+        if SCORING_GUIDANCE
+        else ""
+    )
     return (
         "=== CANDIDATE CONTEXT ===\n"
         f"{_build_candidate_context()}\n\n"
+        f"{guidance_section}"
         "=== CANDIDATE CV (LaTeX source) ===\n"
         f"{cv}\n\n"
         f"=== SAVED ROLES (positive — weight heavily, count={len(saves)}) ===\n"
@@ -170,6 +178,7 @@ def cmd_score(limit: int | None = None) -> None:
         jobs = jobs[:limit]
     if not jobs:
         print("No jobs to score.")
+        _run_auto_discard()
         return
     print(f"Scoring {len(jobs)} job(s) with {SCORING_MODEL}...")
 
@@ -234,3 +243,12 @@ def cmd_score(limit: int | None = None) -> None:
         f"\nDone: {len(jobs) - failures} scored, {failures} failed."
         f" Tokens: in={total_in} out={total_out}, cache hits: {cache_hits}/{len(jobs)}."
     )
+    _run_auto_discard()
+
+
+def _run_auto_discard() -> None:
+    if SCORING_AUTO_DISCARD_BELOW <= 0:
+        return
+    discarded = auto_discard_low_scores(SCORING_AUTO_DISCARD_BELOW)
+    if discarded:
+        print(f"Auto-discarded {discarded} row(s) with fit_score < {SCORING_AUTO_DISCARD_BELOW}.")
