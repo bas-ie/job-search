@@ -58,6 +58,64 @@ def remove_note():
     return jsonify({"ok": True, "company_key": normalize_company_key(company)})
 
 
+def relative_time(date_posted: str | None, first_seen: str | None) -> tuple[str, str]:
+    """Return (display, tooltip) for the posted-date cell."""
+    now = datetime.now()
+
+    posted_dt = None
+    if date_posted:
+        try:
+            posted_dt = datetime.strptime(date_posted[:10], "%Y-%m-%d")
+        except ValueError:
+            pass
+
+    first_seen_dt = None
+    if first_seen:
+        try:
+            first_seen_dt = datetime.fromisoformat(first_seen)
+        except ValueError:
+            pass
+
+    if posted_dt and posted_dt.date() == now.date() and first_seen_dt:
+        delta = now - first_seen_dt
+        hours = int(delta.total_seconds() // 3600)
+        if hours <= 0:
+            minutes = max(0, int(delta.total_seconds() // 60))
+            display = "just now" if minutes == 0 else f"{minutes} min ago"
+        else:
+            display = f"{hours} hour{'s' if hours != 1 else ''} ago"
+    elif posted_dt:
+        days = (now.date() - posted_dt.date()).days
+        if days < 0:
+            display = posted_dt.strftime("%Y-%m-%d")
+        elif days == 0:
+            display = "today"
+        elif days == 1:
+            display = "yesterday"
+        else:
+            display = f"{days} days ago"
+    elif first_seen_dt:
+        delta = now - first_seen_dt
+        hours = int(delta.total_seconds() // 3600)
+        if hours < 24:
+            display = f"{max(0, hours)} hour{'s' if hours != 1 else ''} ago"
+        else:
+            display = f"{hours // 24} days ago"
+    else:
+        display = "?"
+
+    parts = []
+    if date_posted:
+        parts.append(f"Posted: {date_posted}")
+    if first_seen_dt:
+        parts.append(f"First seen: {first_seen_dt.strftime('%Y-%m-%d %H:%M')}")
+    elif first_seen:
+        parts.append(f"First seen: {first_seen}")
+    tooltip = " · ".join(parts) if parts else "No date available"
+
+    return display, tooltip
+
+
 def render_page() -> str:
     jobs = get_jobs()
     notes = get_all_notes()
@@ -79,7 +137,9 @@ def render_page() -> str:
         rows = []
         for job in section:
             jid = job["id"]
-            date_str = job.get("date_posted") or "?"
+            date_display, date_tooltip = relative_time(
+                job.get("date_posted"), job.get("first_seen")
+            )
             company_raw = job.get("company") or ""
             company = escape(company_raw or "?")
             url = escape(job.get("job_url") or "#")
@@ -145,7 +205,7 @@ def render_page() -> str:
                 f'<tr id="job-{jid}">'
                 f"<td>{jid}</td>"
                 f"{fit_cell}"
-                f'<td style="white-space:nowrap">{date_str}</td>'
+                f'<td class="posted" data-tooltip="{escape(date_tooltip, quote=True)}">{escape(date_display)}</td>'
                 f'<td><span class="source">{source}</span></td>'
                 f'<td><a href="{url}" target="_blank">{title}</a>{us_flag}{stack_flag}{note_indicator}</td>'
                 f"<td>{company}</td>"
@@ -232,6 +292,7 @@ def render_page() -> str:
   .note-editor .note-actions {{ margin-top: 0.4rem; }}
   tr.fading {{ opacity: 0.3; transition: opacity 0.3s; }}
   td.fit {{ width: 2.5rem; text-align: center; padding: 0.4rem 0.3rem; position: relative; }}
+  td.posted {{ white-space: nowrap; position: relative; cursor: help; color: #555; }}
   .fit-badge {{ display: inline-block; min-width: 1.8rem; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.78rem; font-weight: 600; cursor: help; position: relative; }}
   .fit-high {{ background: #d4edda; color: #155724; }}
   .fit-mid  {{ background: #fff3cd; color: #856404; }}
