@@ -27,3 +27,6 @@ results/
 
 # User-specific env vars (template lives at .env.example)
 /.env
+
+# Personal-use SEEK module
+/seek.py
