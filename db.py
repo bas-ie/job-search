@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS company_notes (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS discarded_companies (
+    company_key TEXT PRIMARY KEY,
+    company_name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 MIGRATIONS = [
@@ -151,6 +157,9 @@ def upsert_jobs(df: pd.DataFrame) -> tuple[int, int]:
     now = datetime.now().isoformat()
     new_count = 0
     updated_count = 0
+    discarded_keys = {
+        r[0] for r in conn.execute("SELECT company_key FROM discarded_companies").fetchall()
+    }
 
     for _, row in df.iterrows():
         url = row.get("job_url")
@@ -216,11 +225,12 @@ def upsert_jobs(df: pd.DataFrame) -> tuple[int, int]:
 
             us_only = check_us_only(description, location, title)
             azure_only = check_flag(description, title)
+            status = "discarded" if normalize_company_key(company) in discarded_keys else "new"
 
             conn.execute(
                 "INSERT INTO jobs (title, company, location, job_url, date_posted, search_term,"
-                " description, us_only, azure_only, source, first_seen, last_seen)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " description, us_only, azure_only, source, status, first_seen, last_seen)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     title,
                     company,
@@ -232,6 +242,7 @@ def upsert_jobs(df: pd.DataFrame) -> tuple[int, int]:
                     us_only,
                     azure_only,
                     source,
+                    status,
                     now,
                     now,
                 ),
@@ -456,6 +467,49 @@ def upsert_note(company: str, note: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+def discard_company(company: str) -> tuple[bool, int]:
+    """Mark a company as discarded and discard its existing non-discarded jobs.
+
+    Returns (added, affected_jobs). `added` is False if the company was already
+    in the discard list. Existing jobs are matched by normalized company_key,
+    so 'Acme, Inc.' catches rows stored as 'Acme'.
+    """
+    key = normalize_company_key(company)
+    if not key:
+        return False, 0
+    now = datetime.now().isoformat()
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT OR IGNORE INTO discarded_companies (company_key, company_name, created_at)"
+        " VALUES (?, ?, ?)",
+        (key, company, now),
+    )
+    added = cursor.rowcount > 0
+
+    affected = 0
+    rows = conn.execute(
+        "SELECT id, company FROM jobs WHERE status != 'discarded' AND company IS NOT NULL"
+    ).fetchall()
+    matching = [r["id"] for r in rows if normalize_company_key(r["company"]) == key]
+    if matching:
+        placeholders = ",".join("?" * len(matching))
+        cursor = conn.execute(
+            f"UPDATE jobs SET status = 'discarded' WHERE id IN ({placeholders})",  # noqa: S608
+            matching,
+        )
+        affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return added, affected
+
+
+def get_discarded_company_keys() -> set[str]:
+    conn = get_db()
+    rows = conn.execute("SELECT company_key FROM discarded_companies").fetchall()
+    conn.close()
+    return {r["company_key"] for r in rows}
 
 
 def delete_note(company: str) -> bool:

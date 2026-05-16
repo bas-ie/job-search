@@ -9,6 +9,7 @@ from flask import Flask, jsonify, request
 from config import FLAG_LABEL, FLAG_TOOLTIP, RECENT_CUTOFF_DAYS
 from db import (
     delete_note,
+    discard_company,
     get_all_notes,
     get_jobs,
     normalize_company_key,
@@ -46,6 +47,16 @@ def save_note():
         return jsonify({"error": "Invalid company"}), 400
     key = normalize_company_key(company)
     return jsonify({"ok": True, "company_key": key, "note": note})
+
+
+@app.post("/api/companies/discard")
+def discard_company_endpoint():
+    data = request.get_json() or {}
+    company = (data.get("company") or "").strip()
+    if not company:
+        return jsonify({"error": "company is required"}), 400
+    _, affected = discard_company(company)
+    return jsonify({"ok": True, "affected": affected})
 
 
 @app.delete("/api/notes")
@@ -152,16 +163,12 @@ def render_page() -> str:
             company_attr = escape(company_raw, quote=True)
 
             if status == "saved":
-                actions = f'<button class="btn btn-reset" onclick="setStatus({jid},\'new\')">unsave</button> '
+                actions = f'<button class="btn btn-reset" onclick="setStatus({jid},\'new\')">unsave</button>'
             else:
                 actions = (
                     f'<button class="btn btn-save" onclick="setStatus({jid},\'saved\')">save</button> '
-                    f'<button class="btn btn-discard" onclick="setStatus({jid},\'discarded\')">discard</button> '
+                    f'<button class="btn btn-discard" onclick="setStatus({jid},\'discarded\')">discard</button>'
                 )
-            actions += (
-                f'<button class="btn btn-note" data-company="{company_attr}"'
-                f' onclick="toggleNote({jid})">note</button>'
-            )
 
             source = escape(job.get("source") or "")
 
@@ -178,12 +185,12 @@ def render_page() -> str:
                 else ""
             )
 
-            note_indicator = ""
-            if note_entry:
-                note_indicator = (
-                    f' <span class="note-indicator" data-tooltip="Has note — click to view/edit"'
-                    f' onclick="toggleNote({jid})">📝</span>'
-                )
+            has_note = "has-note" if note_entry else ""
+            note_tooltip = "View/edit note" if note_entry else "Add note"
+            note_icon = (
+                f' <span class="note-icon {has_note}" data-company="{company_attr}"'
+                f' data-tooltip="{note_tooltip}" onclick="toggleNote({jid})">📝</span>'
+            )
 
             fit_score = job.get("fit_score")
             fit_rationale = job.get("fit_rationale") or ""
@@ -207,8 +214,10 @@ def render_page() -> str:
                 f"{fit_cell}"
                 f'<td class="posted" data-tooltip="{escape(date_tooltip, quote=True)}">{escape(date_display)}</td>'
                 f'<td><span class="source">{source}</span></td>'
-                f'<td><a href="{url}" target="_blank">{title}</a>{us_flag}{stack_flag}{note_indicator}</td>'
-                f"<td>{company}</td>"
+                f'<td><a href="{url}" target="_blank">{title}</a>{us_flag}{stack_flag}{note_icon}</td>'
+                f'<td>{company} <button class="btn-discard-co" data-company="{company_attr}"'
+                f' data-tooltip="Discard this company and all its roles"'
+                f' onclick="discardCompany(this)">✕</button></td>'
                 f"<td>{location}</td>"
                 f'<td class="actions">{actions}</td>'
                 f"</tr>"
@@ -272,7 +281,7 @@ def render_page() -> str:
   a {{ color: #1a6dd4; text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
   .count {{ color: #666; font-weight: normal; }}
-  td.actions {{ white-space: nowrap; min-width: 13rem; text-align: right; }}
+  td.actions {{ white-space: nowrap; min-width: 9rem; text-align: right; }}
   .btn {{ border: none; padding: 0.25rem 0.5rem; border-radius: 3px; cursor: pointer; font-size: 0.8rem; }}
   .btn-save {{ background: #d4edda; color: #155724; }}
   .btn-save:hover {{ background: #c3e6cb; }}
@@ -283,10 +292,13 @@ def render_page() -> str:
   .source {{ background: #e8eaf6; color: #3949ab; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }}
   .us-only {{ background: #fff3cd; color: #856404; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; margin-left: 0.4rem; position: relative; }}
   .stack-flag {{ background: #cfe2ff; color: #0a4275; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.75rem; font-weight: 600; margin-left: 0.4rem; position: relative; }}
-  .note-indicator {{ cursor: pointer; margin-left: 0.4rem; font-size: 0.85rem; position: relative; }}
-  .note-indicator:hover {{ opacity: 0.7; }}
-  .btn-note {{ background: #fde7c9; color: #7a4a00; }}
-  .btn-note:hover {{ background: #fcd9a8; }}
+  .note-icon {{ cursor: pointer; margin-left: 0.4rem; font-size: 0.85rem; position: relative; opacity: 0.25; filter: grayscale(1); }}
+  .note-icon.has-note {{ opacity: 1; filter: none; }}
+  tr:hover .note-icon {{ opacity: 1; }}
+  .note-icon:hover {{ filter: none; }}
+  .btn-discard-co {{ border: none; background: transparent; color: #b04050; cursor: pointer; padding: 0 0.25rem; font-size: 0.85rem; line-height: 1; opacity: 0.35; position: relative; }}
+  tr:hover .btn-discard-co {{ opacity: 1; }}
+  .btn-discard-co:hover {{ color: #721c24; }}
   tr.note-row > td {{ background: #fffbe6; padding: 0.6rem 1rem; border-bottom: 1px solid #eee; }}
   .note-editor textarea {{ width: 100%; box-sizing: border-box; font: inherit; padding: 0.4rem; border: 1px solid #d0d0d0; border-radius: 3px; resize: vertical; }}
   .note-editor .note-actions {{ margin-top: 0.4rem; }}
@@ -345,7 +357,7 @@ function normalizeKey(name) {{
 }}
 
 function companyForRow(id) {{
-  const btn = document.querySelector('#job-' + id + ' .btn-note');
+  const btn = document.querySelector('#job-' + id + ' .note-icon');
   return btn ? btn.dataset.company : '';
 }}
 
@@ -384,6 +396,20 @@ async function discardNote(id) {{
   try {{
     const res = await fetch('/api/notes', {{
       method: 'DELETE',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{company}})
+    }});
+    if (res.ok) location.reload();
+  }} catch (e) {{ console.error(e); }}
+}}
+
+async function discardCompany(btn) {{
+  const company = btn.dataset.company;
+  if (!company) return;
+  if (!confirm('Discard all roles from ' + company + '?\\nFuture postings from this company will be auto-discarded.')) return;
+  try {{
+    const res = await fetch('/api/companies/discard', {{
+      method: 'POST',
       headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{company}})
     }});
