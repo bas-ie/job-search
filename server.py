@@ -8,13 +8,12 @@ from flask import Flask, jsonify, request
 
 from config import FLAG_LABEL, FLAG_TOOLTIP, RECENT_CUTOFF_DAYS
 from db import (
-    delete_note,
+    delete_role_note,
     discard_company,
-    get_all_notes,
+    get_all_role_notes,
     get_jobs,
-    normalize_company_key,
     set_status,
-    upsert_note,
+    upsert_role_note,
 )
 
 app = Flask(__name__)
@@ -39,14 +38,16 @@ def update_status():
 @app.post("/api/notes")
 def save_note():
     data = request.get_json() or {}
-    company = (data.get("company") or "").strip()
+    try:
+        job_id = int(data.get("job_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "job_id is required"}), 400
     note = (data.get("note") or "").strip()
-    if not company or not note:
-        return jsonify({"error": "company and note are required"}), 400
-    if not upsert_note(company, note):
-        return jsonify({"error": "Invalid company"}), 400
-    key = normalize_company_key(company)
-    return jsonify({"ok": True, "company_key": key, "note": note})
+    if not note:
+        return jsonify({"error": "note is required"}), 400
+    if not upsert_role_note(job_id, note):
+        return jsonify({"error": "Unknown job"}), 404
+    return jsonify({"ok": True, "job_id": job_id, "note": note})
 
 
 @app.post("/api/companies/discard")
@@ -62,11 +63,12 @@ def discard_company_endpoint():
 @app.delete("/api/notes")
 def remove_note():
     data = request.get_json() or {}
-    company = (data.get("company") or "").strip()
-    if not company:
-        return jsonify({"error": "company is required"}), 400
-    delete_note(company)
-    return jsonify({"ok": True, "company_key": normalize_company_key(company)})
+    try:
+        job_id = int(data.get("job_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "job_id is required"}), 400
+    delete_role_note(job_id)
+    return jsonify({"ok": True, "job_id": job_id})
 
 
 def relative_time(date_posted: str | None, first_seen: str | None) -> tuple[str, str]:
@@ -129,7 +131,7 @@ def relative_time(date_posted: str | None, first_seen: str | None) -> tuple[str,
 
 def render_page() -> str:
     jobs = get_jobs()
-    notes = get_all_notes()
+    notes = get_all_role_notes()
     cutoff = (datetime.now() - timedelta(days=RECENT_CUTOFF_DAYS)).strftime("%Y-%m-%d")
 
     saved = [j for j in jobs if j["status"] == "saved"]
@@ -158,8 +160,7 @@ def render_page() -> str:
             location = escape(job.get("location") or "")
             status = job["status"]
 
-            company_key = normalize_company_key(company_raw)
-            note_entry = notes.get(company_key) if company_key else None
+            note_entry = notes.get(jid)
             company_attr = escape(company_raw, quote=True)
 
             if status == "saved":
@@ -188,9 +189,28 @@ def render_page() -> str:
             has_note = "has-note" if note_entry else ""
             note_tooltip = "View/edit note" if note_entry else "Add note"
             note_icon = (
-                f' <span class="note-icon {has_note}" data-company="{company_attr}"'
+                f' <span class="note-icon {has_note}"'
                 f' data-tooltip="{note_tooltip}" onclick="toggleNote({jid})">📝</span>'
             )
+            note_row = (
+                f'<tr id="note-row-{jid}" class="note-row" hidden>'
+                f'<td colspan="8">'
+                f'<div class="note-editor">'
+                f'<textarea id="note-text-{jid}" rows="3"'
+                f' placeholder="Note about this role..."></textarea>'
+                f'<div class="note-actions">'
+                f'<button class="btn btn-save" onclick="saveNote({jid})">save</button> '
+                f'<button class="btn btn-discard" onclick="discardNote({jid})">discard</button>'
+                f"</div></div></td></tr>"
+            )
+            if company_raw:
+                discard_co_btn = (
+                    f' <button class="btn-discard-co" data-company="{company_attr}"'
+                    f' data-tooltip="Discard this company and all its roles"'
+                    f' onclick="discardCompany(this)">✕</button>'
+                )
+            else:
+                discard_co_btn = ""
 
             fit_score = job.get("fit_score")
             fit_rationale = job.get("fit_rationale") or ""
@@ -215,28 +235,18 @@ def render_page() -> str:
                 f'<td class="posted" data-tooltip="{escape(date_tooltip, quote=True)}">{escape(date_display)}</td>'
                 f'<td><span class="source">{source}</span></td>'
                 f'<td><a href="{url}" target="_blank">{title}</a>{us_flag}{stack_flag}{note_icon}</td>'
-                f'<td>{company} <button class="btn-discard-co" data-company="{company_attr}"'
-                f' data-tooltip="Discard this company and all its roles"'
-                f' onclick="discardCompany(this)">✕</button></td>'
+                f'<td>{company}{discard_co_btn}</td>'
                 f"<td>{location}</td>"
                 f'<td class="actions">{actions}</td>'
                 f"</tr>"
-                f'<tr id="note-row-{jid}" class="note-row" hidden>'
-                f'<td colspan="8">'
-                f'<div class="note-editor">'
-                f'<textarea id="note-text-{jid}" rows="3"'
-                f' placeholder="Note about {company}..."></textarea>'
-                f'<div class="note-actions">'
-                f'<button class="btn btn-save" onclick="saveNote({jid})">save</button> '
-                f'<button class="btn btn-discard" onclick="discardNote({jid})">discard</button>'
-                f"</div></div></td></tr>"
+                f"{note_row}"
             )
         return "\n".join(rows)
 
     generated = datetime.now().strftime("%Y-%m-%d %H:%M")
     total = len(saved) + len(recent) + len(older)
 
-    notes_map = {k: v["note"] for k, v in notes.items()}
+    notes_map = {jid: v["note"] for jid, v in notes.items()}
     notes_json = json.dumps(notes_map).replace("</", "<\\/")
 
     table_header = (
@@ -338,38 +348,13 @@ def render_page() -> str:
 <script>
 const NOTES = {notes_json};
 
-function normalizeKey(name) {{
-  if (!name) return '';
-  let key = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
-  const suffixes = ['incorporated', 'corporation', 'limited', 'inc', 'llc', 'ltd', 'plc', 'corp', 'co', 'gmbh', 'sa', 'ag', 'bv', 'nv', 'pty', 'pte', 'srl'];
-  let changed = true;
-  while (changed) {{
-    changed = false;
-    for (const s of suffixes) {{
-      if (key.length > s.length && key.endsWith(s)) {{
-        key = key.slice(0, -s.length);
-        changed = true;
-        break;
-      }}
-    }}
-  }}
-  return key;
-}}
-
-function companyForRow(id) {{
-  const btn = document.querySelector('#job-' + id + ' .note-icon');
-  return btn ? btn.dataset.company : '';
-}}
-
 function toggleNote(id) {{
   const row = document.getElementById('note-row-' + id);
   if (!row) return;
   const willOpen = row.hasAttribute('hidden');
   if (willOpen) {{
-    const company = companyForRow(id);
-    const key = normalizeKey(company);
     const ta = document.getElementById('note-text-' + id);
-    ta.value = NOTES[key] || '';
+    ta.value = NOTES[id] || '';
     row.removeAttribute('hidden');
     ta.focus();
   }} else {{
@@ -378,26 +363,24 @@ function toggleNote(id) {{
 }}
 
 async function saveNote(id) {{
-  const company = companyForRow(id);
   const note = document.getElementById('note-text-' + id).value.trim();
   if (!note) {{ return discardNote(id); }}
   try {{
     const res = await fetch('/api/notes', {{
       method: 'POST',
       headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{company, note}})
+      body: JSON.stringify({{job_id: id, note}})
     }});
     if (res.ok) location.reload();
   }} catch (e) {{ console.error(e); }}
 }}
 
 async function discardNote(id) {{
-  const company = companyForRow(id);
   try {{
     const res = await fetch('/api/notes', {{
       method: 'DELETE',
       headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{company}})
+      body: JSON.stringify({{job_id: id}})
     }});
     if (res.ok) location.reload();
   }} catch (e) {{ console.error(e); }}

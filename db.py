@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS company_notes (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS role_notes (
+    job_id INTEGER PRIMARY KEY,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS discarded_companies (
     company_key TEXT PRIMARY KEY,
     company_name TEXT NOT NULL,
@@ -425,44 +433,40 @@ def normalize_company_key(name: str | None) -> str:
     return key
 
 
-def get_note(company: str) -> dict | None:
-    key = normalize_company_key(company)
-    if not key:
-        return None
+def get_role_note(job_id: int) -> dict | None:
     conn = get_db()
     row = conn.execute(
-        "SELECT company_key, company_name, note, created_at, updated_at"
-        " FROM company_notes WHERE company_key = ?",
-        (key,),
+        "SELECT job_id, note, created_at, updated_at FROM role_notes WHERE job_id = ?",
+        (job_id,),
     ).fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def get_all_notes() -> dict[str, dict]:
-    """Return all notes keyed by normalized company_key."""
+def get_all_role_notes() -> dict[int, dict]:
+    """Return all role notes keyed by job_id."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT company_key, company_name, note, created_at, updated_at FROM company_notes"
+        "SELECT job_id, note, created_at, updated_at FROM role_notes"
     ).fetchall()
     conn.close()
-    return {r["company_key"]: dict(r) for r in rows}
+    return {r["job_id"]: dict(r) for r in rows}
 
 
-def upsert_note(company: str, note: str) -> bool:
-    key = normalize_company_key(company)
-    if not key:
-        return False
+def upsert_role_note(job_id: int, note: str) -> bool:
     now = datetime.now().isoformat()
     conn = get_db()
+    exists = conn.execute("SELECT 1 FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if not exists:
+        conn.close()
+        return False
     conn.execute(
-        "INSERT INTO company_notes (company_key, company_name, note, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, ?)"
-        " ON CONFLICT(company_key) DO UPDATE SET"
+        "INSERT INTO role_notes (job_id, note, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(job_id) DO UPDATE SET"
         "   note = excluded.note,"
-        "   company_name = excluded.company_name,"
         "   updated_at = excluded.updated_at",
-        (key, company, note, now, now),
+        (job_id, note, now, now),
     )
     conn.commit()
     conn.close()
@@ -512,12 +516,9 @@ def get_discarded_company_keys() -> set[str]:
     return {r["company_key"] for r in rows}
 
 
-def delete_note(company: str) -> bool:
-    key = normalize_company_key(company)
-    if not key:
-        return False
+def delete_role_note(job_id: int) -> bool:
     conn = get_db()
-    cursor = conn.execute("DELETE FROM company_notes WHERE company_key = ?", (key,))
+    cursor = conn.execute("DELETE FROM role_notes WHERE job_id = ?", (job_id,))
     conn.commit()
     deleted = cursor.rowcount > 0
     conn.close()
